@@ -83,30 +83,46 @@ impl TimeKeeper {
     }
 
     fn load_logs(&mut self) {
-        let file = File::open("punch_log.txt").unwrap_or_else(|_| File::create("punch_log.txt").unwrap());
+        // Open the log file, or create it if it doesn’t exist.
+        let file = File::open("punch_log.txt").unwrap_or_else(|_| {
+            File::create("punch_log.txt").expect("Failed to create log file")
+        });
+    
+        // Iterate over the lines in the log file.
         for line in BufReader::new(file).lines() {
+            // If the line is valid, attempt to parse it.
             if let Ok(log) = line {
-                let parts: Vec<&str> = log.split(": ").collect();
+                let parts: Vec<&str> = log.split(": ").collect(); // Split into action and timestamp.
+    
+                // Ensure the log entry has exactly two parts.
                 if parts.len() == 2 {
-                    let action = parts[0];
-                    let time = DateTime::parse_from_str(parts[1], "%Y-%m-%d %H:%M:%S")
-                        .unwrap()
-                        .with_timezone(&Local)
-                        .into();
-                    match action {
-                        "Clocked In" => {
-                            self.last_clock_in_time = Some(time);
-                            self.is_clocked_in = true;
-                        }
-                        "Clocked Out" => {
-                            if let Some(clock_in_time) = self.last_clock_in_time {
-                                self.total_worked_time += time.duration_since(clock_in_time).unwrap();
-                                self.last_clock_in_time = None;
+                    let action = parts[0]; // Action (Clocked In / Out).
+                    if let Ok(parsed_time) = DateTime::parse_from_str(parts[1], "%Y-%m-%d %H:%M:%S") {
+                        let time: SystemTime = parsed_time.with_timezone(&Local).into();
+    
+                        // Update the internal state based on the parsed action.
+                        match action {
+                            "Clocked In" => {
+                                self.last_clock_in_time = Some(time);
+                                self.is_clocked_in = true;
                             }
-                            self.is_clocked_in = false;
+                            "Clocked Out" => {
+                                if let Some(clock_in_time) = self.last_clock_in_time {
+                                    self.total_worked_time += time.duration_since(clock_in_time)
+                                        .unwrap_or(Duration::ZERO); // Avoid panic on duration calculation.
+                                    self.last_clock_in_time = None;
+                                }
+                                self.is_clocked_in = false;
+                            }
+                            _ => {
+                                println!("Unknown action in log: {}", action); // Handle unexpected actions gracefully.
+                            }
                         }
-                        _ => {}
+                    } else {
+                        println!("Failed to parse timestamp: {}", parts[1]); // Handle parse errors.
                     }
+                } else {
+                    println!("Malformed log entry: {}", log); // Handle malformed entries.
                 }
             }
         }
